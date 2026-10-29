@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Khelcom Shop</title>
+<style>
+:root{--bg:#f4f6f9;--c:#fff;--t:#14181f;--m:#667085;--p:#0b5fff;--b:#e4e7ec;--r:#d92d20;--g:#12805c}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1117;--c:#171b24;--t:#eef1f6;--m:#98a2b3;--b:#2a303c}}
+*{box-sizing:border-box}body{margin:0;font:15px system-ui,sans-serif;background:var(--bg);color:var(--t)}
+button,input,select,textarea{font:inherit;color:inherit}
+input,select,textarea{width:100%;padding:10px;border:1px solid var(--b);border-radius:8px;background:var(--c);margin:4px 0 10px}
+button{cursor:pointer;border:0;border-radius:8px;padding:10px 14px;background:var(--p);color:#fff}
+button.s{background:var(--c);color:var(--t);border:1px solid var(--b)}button.d{background:var(--r)}
+.app{display:flex;min-height:100vh}
+nav{width:220px;background:var(--c);border-right:1px solid var(--b);padding:14px;position:sticky;top:0;height:100vh;overflow:auto}
+nav h2{margin:0 0 14px;color:var(--p)}nav a{display:block;padding:10px;border-radius:8px;cursor:pointer;color:var(--t)}
+nav a.on,nav a:hover{background:var(--bg)}
+main{flex:1;padding:18px;max-width:100%;overflow-x:auto}
+.card{background:var(--c);border:1px solid var(--b);border-radius:12px;padding:14px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.kpi b{font-size:24px;display:block}.m{color:var(--m)}
+.pimg{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:8px;background:var(--bg)}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--b)}
+.tag{padding:2px 8px;border-radius:99px;font-size:12px;background:var(--bg)}.low{color:var(--r)}.ok{color:var(--g)}
+.modal{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:14px;z-index:20}
+.modal>div{background:var(--c);border-radius:12px;padding:18px;width:100%;max-width:440px;max-height:90vh;overflow:auto}
+#auth{max-width:360px;margin:12vh auto;padding:0 14px}
+#fab{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border-radius:50%;font-size:24px;z-index:10}
+#chat{position:fixed;right:12px;bottom:84px;width:min(360px,calc(100vw - 24px));height:min(480px,70vh);display:none;flex-direction:column;z-index:10}
+#chat.on{display:flex}#msgs{flex:1;overflow:auto;padding:8px}
+.bub{padding:8px 12px;border-radius:12px;margin:6px 0;max-width:85%;white-space:pre-wrap}
+.u{background:var(--p);color:#fff;margin-left:auto}.a{background:var(--bg)}
+@media(max-width:700px){.app{flex-direction:column}nav{width:100%;height:auto;position:static;display:flex;gap:4px;overflow-x:auto}nav h2{display:none}nav a{white-space:nowrap}}
+@media print{nav,#fab,#chat,.np{display:none!important}}
+</style></head><body>
+<div id="root"></div><div id="modal"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+/* ===== CONFIG : remplacez par vos clés Supabase (Project Settings > API) ===== */
+const SUPABASE_URL="", SUPABASE_ANON_KEY="";
+const sb=(SUPABASE_URL&&window.supabase)?supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
+
+/* ===== ÉTAT ===== */
+const K="khelcom_v1";
+let S;try{S=JSON.parse(localStorage.getItem(K))}catch(e){}
+S=S||{user:null,products:[],orders:[],events:[],cart:[],cfg:{shop:"Ma Boutique Tech",cur:"FCFA",min:5,wave:"",om:"",email:""}};
+const save=()=>{try{localStorage.setItem(K,JSON.stringify(S))}catch(e){alert("Stockage plein : images trop lourdes.")}};
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const money=n=>Number(n).toLocaleString("fr-FR")+" "+S.cfg.cur;
+const uid=()=>Math.random().toString(36).slice(2,9);
+let view="dash";
+
+/* ===== SUPABASE (optionnel) : tables products, orders ===== */
+async function sync(table,rows){if(!sb)return;try{await sb.from(table).upsert(rows)}catch(e){console.warn(e)}}
+async function pull(){if(!sb)return;try{const p=await sb.from("products").select("*");if(p.data&&p.data.length)S.products=p.data;const o=await sb.from("orders").select("*");if(o.data&&o.data.length)S.orders=o.data;save()}catch(e){}}
+function log(type,text){S.events.unshift({id:uid(),type,text,date:new Date().toISOString().slice(0,16)});save()}
+
+/* ===== AUTH ===== */
+function authView(){$("#root").innerHTML=`<div id="auth" class="card"><h2>Khelcom Shop</h2><p class="m">Connexion à votre tableau de bord</p>
+<input id="em" type="email" placeholder="Email"><input id="pw" type="password" placeholder="Mot de passe (6 caractères min.)">
+<button onclick="login(false)">Se connecter</button> <button class="s" onclick="login(true)">Créer un compte</button>
+<p class="m">${sb?"Authentification Supabase active.":"Mode démo local (sans Supabase)."}</p></div>`}
+async function login(signup){const email=$("#em").value.trim(),pw=$("#pw").value;
+if(!email||pw.length<6)return alert("Email et mot de passe (6 caractères min.) requis.");
+if(sb){const r=signup?await sb.auth.signUp({email,password:pw}):await sb.auth.signInWithPassword({email,password:pw});
+if(r.error)return alert(r.error.message);await pull()}
+S.user={email};S.cfg.email=S.cfg.email||email;save();render()}
+async function logout(){if(sb)await sb.auth.signOut();S.user=null;save();render()}
+
+/* ===== RENDU ===== */
+const NAV=[["dash","📊 Tableau de bord"],["shop","🛒 Boutique"],["prod","📦 Produits"],["dig","💾 Produit digital"],["inv","🏷️ Inventaire"],["evt","📅 Événements"],["fac","🧾 Factures"],["set","⚙️ Paramètres"]];
+function render(){if(!S.user)return authView();
+$("#root").innerHTML=`<div class="app"><nav><h2>Khelcom</h2>${NAV.map(([k,l])=>`<a class="${view==k?"on":""}" onclick="go('${k}')">${l}</a>`).join("")}<a onclick="logout()">🚪 Se déconnecter</a></nav><main id="main"></main></div>
+<button id="fab" onclick="$('#chat').classList.toggle('on')" aria-label="Khelcom">🤖</button>
+<div id="chat" class="card"><b>Khelcom · IA <span class="m">(Wolof / Français)</span></b><div id="msgs"></div>
+<div style="display:flex;gap:6px"><input id="q" placeholder="Nanga def ? / Posez votre question" onkeydown="if(event.key=='Enter')ask()"><button onclick="ask()">➤</button></div></div>`;
+if(!$("#msgs").children.length)bot("Salaam maleekum ! Maa ngi Khelcom, assistant IA de la boutique. Je parle wolof et français. Comment puis-je vous aider ?");
+go(view)}
+function go(v){view=v;document.querySelectorAll("nav a").forEach(a=>a.classList.toggle("on",a.getAttribute("onclick")==`go('${v}')`));$("#main").innerHTML=V[v]()}
+const stockOf=p=>p.digital?"∞":p.qty;
+const low=p=>!p.digital&&p.qty<=S.cfg.min;
+
+const V={
+dash(){const paid=S.orders.filter(o=>o.status=="payée"),rev=paid.reduce((a,o)=>a+o.total,0),lw=S.products.filter(low);
+return`<h2>Tableau de bord</h2><div class="grid"><div class="card kpi"><span class="m">Revenus</span><b>${money(rev)}</b></div><div class="card kpi"><span class="m">Commandes</span><b>${S.orders.length}</b></div><div class="card kpi"><span class="m">Produits</span><b>${S.products.length}</b></div><div class="card kpi"><span class="m">Stock bas</span><b class="${lw.length?"low":""}">${lw.length}</b></div></div>
+<div class="card"><h3>Alertes stock</h3>${lw.map(p=>`<div class="low">⚠️ ${esc(p.name)} : ${p.qty} restant(s)</div>`).join("")||"<span class='m'>Aucune alerte.</span>"}</div>
+<div class="card"><h3>Dernières commandes</h3>${S.orders.slice(0,5).map(o=>`<div>${esc(o.num)} · ${esc(o.client)} · ${money(o.total)}</div>`).join("")||"<span class='m'>Aucune commande.</span>"}</div>`},
+
+shop(){return`<h2>Boutique</h2><button class="np" onclick="cartView()">🛍️ Panier (${S.cart.reduce((a,c)=>a+c.q,0)})</button><br><br><div class="grid">${S.products.map(p=>`<div class="card">${p.img?`<img class="pimg" src="${p.img}" alt="">`:`<div class="pimg"></div>`}<b>${esc(p.name)}</b><div class="m">Réf. ${esc(p.ref)}</div><div>${money(p.price)}</div><div class="${low(p)?"low":"m"}">${p.digital?"Produit digital":p.qty>0?"Stock : "+p.qty:"Rupture"}</div><br><button ${!p.digital&&p.qty<1?"disabled":""} onclick="addCart('${p.id}')">Ajouter</button></div>`).join("")||"<p class='m'>Ajoutez des produits pour remplir la boutique.</p>"}</div>`},
+
+prod(){return`<h2>Produits</h2><button onclick="prodForm()">+ Ajouter un produit</button><br><br><div class="card"><table><tr><th>Image</th><th>Nom</th><th>Réf.</th><th>Prix</th><th>Qté</th><th></th></tr>${S.products.filter(p=>!p.digital).map(p=>`<tr><td>${p.img?`<img src="${p.img}" width="44" height="44" style="object-fit:cover;border-radius:6px" alt="">`:""}</td><td>${esc(p.name)}</td><td>${esc(p.ref)}</td><td>${money(p.price)}</td><td class="${low(p)?"low":""}">${p.qty}</td><td><button class="s" onclick="prodForm('${p.id}')">✏️</button> <button class="d" onclick="delProd('${p.id}')">🗑️</button></td></tr>`).join("")}</table></div>`},
+
+dig(){return`<h2>Produit digital</h2><div class="card"><p class="m">Logiciel, licence, ebook, formation : livré par lien, sans stock.</p><button onclick="prodForm(null,true)">+ Créer un produit digital</button></div><div class="card">${S.products.filter(p=>p.digital).map(p=>`<div>💾 ${esc(p.name)} · ${money(p.price)} · <button class="d" onclick="delProd('${p.id}')">Supprimer</button></div>`).join("")||"<span class='m'>Aucun produit digital.</span>"}</div>`},
+
+inv(){return`<h2>Inventaire automatique</h2><p class="m">Le stock baisse à chaque commande payée. Seuil d’alerte : ${S.cfg.min}.</p><div class="card"><table><tr><th>Produit</th><th>Réf.</th><th>Stock</th><th>État</th><th>Réappro.</th></tr>${S.products.filter(p=>!p.digital).map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.ref)}</td><td>${p.qty}</td><td class="${low(p)?"low":"ok"}">${p.qty<1?"Rupture":low(p)?"Stock bas":"OK"}</td><td><button class="s" onclick="restock('${p.id}')">+ Ajouter</button></td></tr>`).join("")}</table></div>`},
+
+evt(){return`<h2>Événements</h2><div class="card"><input id="et" placeholder="Titre (promo, livraison, salon…)"><input id="ed" type="datetime-local"><button onclick="addEvt()">Ajouter l’événement</button></div><div class="card">${S.events.map(e=>`<div>${e.date.replace("T"," ")} · <span class="tag">${esc(e.type)}</span> ${esc(e.text)}</div>`).join("")||"<span class='m'>Aucun événement.</span>"}</div>`},
+
+fac(){return`<h2>Factures</h2><div class="card"><table><tr><th>N°</th><th>Client</th><th>Total</th><th>Statut</th><th></th></tr>${S.orders.map(o=>`<tr><td>${esc(o.num)}</td><td>${esc(o.client)}</td><td>${money(o.total)}</td><td>${esc(o.status)}</td><td><button class="s" onclick="invoice('${o.id}')">Voir</button></td></tr>`).join("")}</table></div>`},
+
+set(){const c=S.cfg;return`<h2>Paramètres</h2><div class="card"><label>Nom de la boutique<input id="s1" value="${esc(c.shop)}"></label><label>Devise<input id="s2" value="${esc(c.cur)}"></label><label>Seuil de stock bas<input id="s3" type="number" value="${c.min}"></label><label>Numéro Wave (réception)<input id="s4" value="${esc(c.wave)}"></label><label>Numéro Orange Money (réception)<input id="s5" value="${esc(c.om)}"></label><label>Email de contact<input id="s6" value="${esc(c.email)}"></label><button onclick="saveSet()">Enregistrer</button> <button class="s" onclick="exportData()">Exporter (JSON)</button></div>`}};
+
+function saveSet(){const c=S.cfg;c.shop=$("#s1").value;c.cur=$("#s2").value||"FCFA";c.min=+$("#s3").value||0;c.wave=$("#s4").value;c.om=$("#s5").value;c.email=$("#s6").value;save();alert("Paramètres enregistrés.")}
+function exportData(){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,1)],{type:"application/json"}));a.download="khelcom-export.json";a.click()}
+
+/* ===== PRODUITS ===== */
+const M=h=>{$("#modal").innerHTML=h?`<div class="modal" onclick="if(event.target==this)M()"><div>${h}</div></div>`:""};
+let tmpImg="";
+function prodForm(id,dig){const p=S.products.find(x=>x.id==id)||{};dig=dig||p.digital;tmpImg=p.img||"";
+M(`<h3>${id?"Modifier":dig?"Produit digital":"Nouveau produit"}</h3><label>Nom du produit<input id="pn" value="${esc(p.name)}"></label><label>Référence<input id="pr" value="${esc(p.ref)}"></label>
+<label>Image du produit<input id="pi" type="file" accept="image/*" onchange="readImg(this)"></label><img id="prev" class="pimg" style="max-height:120px;${tmpImg?"":"display:none"}" src="${tmpImg}" alt="">
+<label>Prix (${esc(S.cfg.cur)})<input id="pp" type="number" min="0" value="${p.price??""}"></label>
+${dig?`<label>Lien de téléchargement<input id="pl" value="${esc(p.link)}"></label>`:`<label>Quantité en stock<input id="pq" type="number" min="0" value="${p.qty??""}"></label>`}
+<button onclick="saveProd('${id||""}',${!!dig})">Enregistrer</button> <button class="s" onclick="M()">Annuler</button>`)}
+function readImg(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const c=document.createElement("canvas"),k=Math.min(1,500/im.width);c.width=im.width*k;c.height=im.height*k;c.getContext("2d").drawImage(im,0,0,c.width,c.height);tmpImg=c.toDataURL("image/jpeg",.75);const v=$("#prev");v.src=tmpImg;v.style.display="block"};im.src=r.result};r.readAsDataURL(f)}
+function saveProd(id,dig){const name=$("#pn").value.trim(),ref=$("#pr").value.trim(),price=+$("#pp").value;
+if(!name||!ref||!(price>=0)||$("#pp").value==="")return alert("Nom, référence et prix obligatoires.");
+if(S.products.some(p=>p.ref==ref&&p.id!=id))return alert("Cette référence existe déjà.");
+const o={id:id||uid(),name,ref,img:tmpImg,price,digital:dig};
+if(dig)o.link=$("#pl").value;else{o.qty=parseInt($("#pq").value);if(!(o.qty>=0))return alert("Quantité invalide.")}
+const i=S.products.findIndex(p=>p.id==id);if(i>=0)S.products[i]=o;else{S.products.push(o);log("produit","Produit ajouté : "+name)}
+save();sync("products",[o]);M();go(view)}
+function delProd(id){if(!confirm("Supprimer ce produit ?"))return;S.products=S.products.filter(p=>p.id!=id);save();if(sb)sb.from("products").delete().eq("id",id);go(view)}
+function restock(id){const n=parseInt(prompt("Quantité à ajouter ?"));if(!(n>0))return;const p=S.products.find(x=>x.id==id);p.qty+=n;log("stock",`Réappro. ${p.name} +${n}`);save();sync("products",[p]);go("inv")}
+function addEvt(){const t=$("#et").value.trim();if(!t)return;S.events.unshift({id:uid(),type:"manuel",text:t,date:$("#ed").value||new Date().toISOString().slice(0,16)});save();go("evt")}
+
+/* ===== PANIER & PAIEMENT ===== */
+function addCart(id){const c=S.cart.find(x=>x.id==id),p=S.products.find(x=>x.id==id);
+if(!p.digital&&(c?c.q:0)+1>p.qty)return alert("Stock insuffisant.");c?c.q++:S.cart.push({id,q:1});save();go("shop")}
+const total=()=>S.cart.reduce((a,c)=>{const p=S.products.find(x=>x.id==c.id);return a+(p?p.price*c.q:0)},0);
+function cartView(){M(`<h3>Panier</h3>${S.cart.map(c=>{const p=S.products.find(x=>x.id==c.id);return p?`<div>${esc(p.name)} × ${c.q} — ${money(p.price*c.q)} <button class="s" onclick="S.cart=S.cart.filter(x=>x.id!='${c.id}');save();cartView()">✕</button></div>`:""}).join("")||"<p class='m'>Panier vide.</p>"}<h3>Total : ${money(total())}</h3>
+${S.cart.length?`<label>Nom du client<input id="cn"></label><label>Mode de paiement<select id="pm" onchange="payFields()"><option value="wave">Wave</option><option value="om">Orange Money</option><option value="card">Carte bancaire</option></select></label><div id="pf"></div><button onclick="pay()">Payer</button> `:""}<button class="s" onclick="M()">Fermer</button>`);if(S.cart.length)payFields()}
+function payFields(){const m=$("#pm").value;$("#pf").innerHTML=m=="card"?`<input id="cc" placeholder="Numéro de carte" inputmode="numeric" autocomplete="cc-number"><input id="ce" placeholder="MM/AA"><input id="cv" placeholder="CVC"><p class="m">Démo : branchez Stripe ou PayDunya pour de vrais paiements (ne stockez jamais de numéros de carte).</p>`:`<input id="ph" type="tel" placeholder="Votre numéro ${m=="wave"?"Wave":"Orange Money"}"><p class="m">Paiement vers : ${esc((m=="wave"?S.cfg.wave:S.cfg.om)||"numéro non configuré")}. Démo : branchez l’API ${m=="wave"?"Wave Checkout":"Orange Money"} pour la confirmation réelle.</p>`}
+async function pay(){const name=$("#cn").value.trim(),m=$("#pm").value;if(!name)return alert("Nom du client requis.");
+if(m=="card"?!($("#cc").value&&$("#ce").value&&$("#cv").value):!$("#ph").value)return alert("Complétez les informations de paiement.");
+for(const c of S.cart){const p=S.products.find(x=>x.id==c.id);if(!p.digital&&c.q>p.qty)return alert("Stock insuffisant : "+p.name)}
+const items=S.cart.map(c=>{const p=S.products.find(x=>x.id==c.id);return{id:p.id,name:p.name,ref:p.ref,price:p.price,q:c.q}});
+const o={id:uid(),num:"F-"+new Date().getFullYear()+"-"+String(S.orders.length+1).padStart(4,"0"),client:name,method:{wave:"Wave",om:"Orange Money",card:"Carte bancaire"}[m],items,total:total(),status:"payée",date:new Date().toISOString().slice(0,10)};
+S.cart.forEach(c=>{const p=S.products.find(x=>x.id==c.id);if(!p.digital){p.qty-=c.q;sync("products",[p]);if(low(p))log("stock",`Stock bas : ${p.name} (${p.qty})`)}});
+S.orders.unshift(o);log("commande",`${o.num} · ${name} · ${money(o.total)}`);S.cart=[];save();sync("orders",[{id:o.id,num:o.num,client:o.client,total:o.total,status:o.status,data:o}]);M();go("fac");invoice(o.id)}
+function invoice(id){const o=S.orders.find(x=>x.id==id);M(`<h3>${esc(S.cfg.shop)}</h3><b>Facture ${esc(o.num)}</b><div class="m">${o.date} · ${esc(o.client)} · ${esc(o.method)}</div><table>${o.items.map(i=>`<tr><td>${esc(i.name)}</td><td>${i.q} × ${money(i.price)}</td><td>${money(i.q*i.price)}</td></tr>`).join("")}</table><h3>Total : ${money(o.total)}</h3><button class="np" onclick="window.print()">Imprimer / PDF</button> <button class="s np" onclick="M()">Fermer</button>`)}
+
+/* ===== KHELCOM IA (wolof + français) ===== */
+const hist=[];
+function bot(t){const d=document.createElement("div");d.className="bub a";d.textContent=t;$("#msgs").appendChild(d);$("#msgs").scrollTop=1e9}
+function usr(t){const d=document.createElement("div");d.className="bub u";d.textContent=t;$("#msgs").appendChild(d)}
+async function ask(){const q=$("#q").value.trim();if(!q)return;$("#q").value="";usr(q);hist.push({role:"user",content:q});
+const cat=S.products.map(p=>({nom:p.name,ref:p.ref,prix:p.price,stock:p.digital?"digital":p.qty}));
+try{const r=await fetch("/.netlify/functions/khelcom",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:hist.slice(-12),catalog:cat,shop:S.cfg.shop,cur:S.cfg.cur})});
+if(!r.ok)throw 0;const j=await r.json();hist.push({role:"assistant",content:j.reply});bot(j.reply)}
+catch(e){const t=local(q);hist.push({role:"assistant",content:t});bot(t)}}
+function local(q){const s=q.toLowerCase(),wo=/(salaam|nanga|naka|ñaata|njaata|jënd|jend|waaw|déedéet|jërëjëf|mangi|maa ngi|lan la|ban|dafa|amul|am na)/.test(s);
+const p=S.products.find(p=>s.includes(p.name.toLowerCase())||s.includes(p.ref.toLowerCase())||p.name.toLowerCase().split(" ").some(w=>w.length>3&&s.includes(w)));
+if(p){const st=p.digital?"disponible":p.qty>0?p.qty+" en stock":"en rupture";return wo?`${p.name} : ${money(p.price)}. Am na ko ? ${p.digital||p.qty>0?"Waaw, am na ("+st+").":"Déedéet, amul leegi."}`:`${p.name} (réf. ${p.ref}) : ${money(p.price)}, ${st}.`}
+if(/(paie|payer|wave|orange|carte|fay)/.test(s))return wo?"Mën nga fay ak Wave, Orange Money walla carte bancaire.":"Vous pouvez payer par Wave, Orange Money ou carte bancaire.";
+if(/(salaam|bonjour|salut|nanga)/.test(s))return wo?"Maleekum salaam ! Naka laa mën laa jàppale ?":"Bonjour ! Comment puis-je vous aider ?";
+return wo?"Baal ma, déedéet dégg ma. Wax ma tur bi walla réf. produit bi.":"Je n’ai pas trouvé. Donnez-moi le nom ou la référence du produit. (IA complète : active après déploiement Netlify + clé Claude.)"}
+
+(async()=>{if(sb){const{data}=await sb.auth.getSession();if(data.session){S.user={email:data.session.user.email};await pull()}}render()})();
+</script></body></html>
